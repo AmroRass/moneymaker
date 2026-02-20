@@ -1,77 +1,96 @@
 """
-data.py - Fetches price data and news from Finnhub
+data.py - Price data from OANDA, news from Finnhub free tier
 """
 
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-import time
-from config import FINNHUB_API_KEY, ASSET_CONFIG, TRADE_CONFIG, SENTIMENT_CONFIG
+import oandapyV20
+import oandapyV20.endpoints.instruments as instruments
+from config import (
+    FINNHUB_API_KEY, ASSET_CONFIG,
+    OANDA_ACCESS_TOKEN, OANDA_ENVIRONMENT
+)
 
+FINNHUB_BASE = "https://finnhub.io/api/v1"
 
-BASE_URL = "https://finnhub.io/api/v1"
+oanda_client = oandapyV20.API(
+    access_token=OANDA_ACCESS_TOKEN,
+    environment=OANDA_ENVIRONMENT
+)
+
+GRANULARITY_MAP = {
+    "1":   "M1",
+    "5":   "M5",
+    "15":  "M15",
+    "30":  "M30",
+    "60":  "H1",
+    "240": "H4",
+    "D":   "D",
+}
 
 
 def get_candles(symbol: str, resolution: str, lookback_bars: int = 100) -> pd.DataFrame:
-    """
-    Fetch OHLCV candles from Finnhub.
-    resolution: "1", "5", "15", "30", "60", "D"
-    """
-    to_ts = int(time.time())
-    from_ts = to_ts - (lookback_bars * int(resolution) * 60)
+    """Fetch OHLCV candles from OANDA."""
+    instrument  = ASSET_CONFIG["oanda_instrument"]
+    granularity = GRANULARITY_MAP.get(resolution, "M15")
 
-    url = f"{BASE_URL}/forex/candle"
     params = {
-        "symbol": symbol,
-        "resolution": resolution,
-        "from": from_ts,
-        "to": to_ts,
-        "token": FINNHUB_API_KEY
+        "count":       lookback_bars,
+        "granularity": granularity,
+        "price":       "M",
     }
 
-    resp = requests.get(url, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
+    r  = instruments.InstrumentsCandles(instrument, params=params)
+    rv = oanda_client.request(r)
 
-    if data.get("s") != "ok" or not data.get("c"):
-        print(f"[DATA] No candle data returned for {symbol}")
+    candles = rv.get("candles", [])
+    if not candles:
+        print(f"[DATA] No candles returned for {instrument}")
         return pd.DataFrame()
 
-    df = pd.DataFrame({
-        "timestamp": pd.to_datetime(data["t"], unit="s"),
-        "open":  data["o"],
-        "high":  data["h"],
-        "low":   data["l"],
-        "close": data["c"],
-        "volume": data["v"],
-    })
+    rows = []
+    for c in candles:
+        if not c.get("complete"):
+            continue
+        mid = c.get("mid", {})
+        rows.append({
+            "timestamp": pd.to_datetime(c["time"]),
+            "open":      float(mid.get("o", 0)),
+            "high":      float(mid.get("h", 0)),
+            "low":       float(mid.get("l", 0)),
+            "close":     float(mid.get("c", 0)),
+            "volume":    int(c.get("volume", 0)),
+        })
+
+    df = pd.DataFrame(rows)
     df.set_index("timestamp", inplace=True)
     return df
 
 
 def get_news(keywords: list, lookback_hours: int = 2) -> list:
     """
-    Fetch recent general market news and filter by keywords.
-    Returns list of dicts with title, summary, sentiment, datetime.
+    Fetch general market news from Finnhub free tier.
+    Returns articles matching gold-relevant keywords.
     """
-    url = f"{BASE_URL}/news"
-    params = {
-        "category": "general",
-        "token": FINNHUB_API_KEY
-    }
+    url    = f"{FINNHUB_BASE}/news"
+    params = {"category": "general", "token": FINNHUB_API_KEY}
 
-    resp = requests.get(url, params=params, timeout=10)
-    resp.raise_for_status()
-    articles = resp.json()
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        articles = resp.json()
+    except Exception as e:
+        print(f"[DATA] News fetch failed: {e}")
+        return []
 
-    cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+    cutoff   = datetime.utcnow() - timedelta(hours=lookback_hours)
     filtered = []
 
     for article in articles:
         pub_time = datetime.utcfromtimestamp(article.get("datetime", 0))
         if pub_time < cutoff:
             continue
-
         text = (article.get("headline", "") + " " + article.get("summary", "")).lower()
         if any(kw.lower() in text for kw in keywords):
             filtered.append({
@@ -82,29 +101,35 @@ def get_news(keywords: list, lookback_hours: int = 2) -> list:
                 "source":   article.get("source", ""),
             })
 
+    print(f"[DATA] Found {len(filtered)} relevant articles")
     return filtered
 
 
 def get_forex_sentiment(symbol: str = "XAUUSD") -> dict:
     """
-    Fetch Finnhub's built-in sentiment for a symbol.
-    Returns buzz and sentiment scores.
+    Fetch Finnhub's built-in sentiment score.
+    Falls back gracefully if the symbol isn't supported on free tier.
     """
-    url = f"{BASE_URL}/news-sentiment"
+    url = f"{FINNHUB_BASE}/news-sentiment"
     params = {
         "symbol": symbol,
-        "token": FINNHUB_API_KEY
+        "token":  FINNHUB_API_KEY
     }
 
-    resp = requests.get(url, params=params, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
 
-    sentiment_score = data.get("sentiment", {}).get("bullishPercent", 0.5) - 0.5
-    buzz_score = data.get("buzz", {}).get("buzz", 0)
+        sentiment_score = data.get("sentiment", {}).get("bullishPercent", 0.5) - 0.5
+        buzz_score      = data.get("buzz", {}).get("buzz", 0)
 
-    return {
-        "sentiment_score": round(sentiment_score, 3),
-        "buzz": buzz_score,
-        "articles_in_week": data.get("buzz", {}).get("weeklyAverage", 0),
-    }
+        return {
+            "sentiment_score": round(sentiment_score, 3),
+            "buzz":            buzz_score,
+            "articles_in_week": data.get("buzz", {}).get("weeklyAverage", 0),
+        }
+
+    except Exception as e:
+        print(f"[DATA] Sentiment fetch failed ({e}), defaulting to neutral")
+        return {"sentiment_score": 0.0, "buzz": 0.0, "articles_in_week": 0}

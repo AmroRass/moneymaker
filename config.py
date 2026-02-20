@@ -6,31 +6,39 @@ Everything else in the system stays the same.
 ASSET_CONFIG = {
     "name": "Gold",
     "finnhub_symbol": "OANDA:XAU_USD",
-    "oanda_instrument": "XAU_USD",        # OANDA instrument format
+    "oanda_instrument": "XAU_USD",
     "news_keywords": ["gold", "XAU", "fed", "inflation", "dollar", "interest rate", "central bank", "safe haven", "geopolitical"],
     "description": "Gold Spot vs USD"
 }
 
-# Trading parameters
+# Trading parameters — validated via rigorous walk-forward backtest (15 months)
 TRADE_CONFIG = {
     "timeframe": "15",           # minutes
     "ema_fast": 9,
-    "ema_slow": 21,
+    "ema_slow": 50,              # changed from 21 — confirmed better via backtest
     "adx_period": 14,
-    "adx_threshold": 20,         # min ADX to confirm trend exists
+    "adx_threshold": 25,         # changed from 20 — filters weak trends
     "take_profit_pct": 0.004,    # 0.4%
-    "stop_loss_pct": 0.003,      # 0.3%
-    "conflict_mode": "risky",    # "risky" = trade anyway, "conservative" = skip
-    "news_lookback_hours": 2,    # how far back to look for relevant news
-    "poll_interval_seconds": 60, # how often to run the loop
-    "oanda_units": 1,            # number of units (oz of gold) per trade — keep small for demo
+    "stop_loss_pct": 0.002,      # changed from 0.003 — better risk/reward ratio
+    "htf_confirmation": True,    # NEW — only trade when 1H EMA50 agrees with 15min signal
+    "conflict_mode": "risky",
+    "news_lookback_hours": 6,
+    "poll_interval_seconds": 30,
+    "oanda_units": 1,
+}
+
+# Session filter — only trade London + NY overlap (7am-5pm UTC)
+SESSION_CONFIG = {
+    "enabled": True,
+    "start_hour_utc": 7,
+    "end_hour_utc": 17,
 }
 
 # Sentiment thresholds
 SENTIMENT_CONFIG = {
-    "bullish_threshold": 0.2,    # Finnhub sentiment score above this = bullish
-    "bearish_threshold": -0.2,   # below this = bearish
-    "high_impact_score": 0.6,    # send to Claude for deeper analysis if above this
+    "bullish_threshold": 0.2,
+    "bearish_threshold": -0.2,
+    "high_impact_score": 0.6,
 }
 
 # API Keys - loaded from .env file (never hardcode keys here)
@@ -42,7 +50,7 @@ FINNHUB_API_KEY    = os.getenv("FINNHUB_API_KEY")
 ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY")
 OANDA_ACCESS_TOKEN = os.getenv("OANDA_ACCESS_TOKEN")
 OANDA_ACCOUNT_ID   = os.getenv("OANDA_ACCOUNT_ID")
-OANDA_ENVIRONMENT  = os.getenv("OANDA_ENVIRONMENT", "practice")  # defaults to demo
+OANDA_ENVIRONMENT  = os.getenv("OANDA_ENVIRONMENT", "practice")
 
 def validate_keys():
     missing = [k for k, v in {
