@@ -21,8 +21,8 @@ TRADE_CONFIG = {
     "take_profit_pct": 0.004,    # 0.4%
     "stop_loss_pct": 0.003,      # 0.3%
     "conflict_mode": "risky",    # "risky" = trade anyway, "conservative" = skip
-    "news_lookback_hours": 2,    # how far back to look for relevant news
-    "poll_interval_seconds": 60, # how often to run the loop
+    "news_lookback_hours": 6,    # how far back to look for relevant news
+    "poll_interval_seconds": 30, # how often to run the loop
     "oanda_units": 1,            # number of units (oz of gold) per trade — keep small for demo
 }
 

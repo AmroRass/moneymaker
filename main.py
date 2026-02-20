@@ -4,8 +4,6 @@ Orchestrates: data → technicals → sentiment → signal → execution → log
 
 Usage:
     python main.py
-
-Make sure you've filled in your API keys in config.py first.
 """
 
 import time
@@ -13,10 +11,10 @@ import traceback
 from datetime import datetime
 
 from config import ASSET_CONFIG, TRADE_CONFIG, validate_keys
-from data import get_candles, get_news, get_forex_sentiment
+from data import get_candles, get_news
 from technicals import get_trend_signal
 from ai_layer import get_combined_sentiment
-from signal import generate_signal
+from signalgen import generate_signal
 from execution import submit_order
 from logger import init_log, log_decision, print_decision
 
@@ -24,11 +22,11 @@ from logger import init_log, log_decision, print_decision
 def run_cycle():
     """Run one full decision cycle."""
 
-    symbol    = ASSET_CONFIG["finnhub_symbol"]
+    symbol    = ASSET_CONFIG["oanda_instrument"]
     keywords  = ASSET_CONFIG["news_keywords"]
     timeframe = TRADE_CONFIG["timeframe"]
 
-    # 1. Fetch price data
+    # 1. Fetch price data from OANDA
     df = get_candles(symbol, timeframe, lookback_bars=100)
     if df.empty:
         print("[WARN] No price data, skipping cycle")
@@ -37,19 +35,14 @@ def run_cycle():
     # 2. Technical analysis
     trend = get_trend_signal(df)
 
-    # 3. News + sentiment
-    articles       = get_news(keywords, lookback_hours=TRADE_CONFIG["news_lookback_hours"])
-    finnhub_data   = get_forex_sentiment()
-    sentiment      = get_combined_sentiment(
-        finnhub_score = finnhub_data["sentiment_score"],
-        articles      = articles,
-        buzz          = finnhub_data["buzz"],
-    )
+    # 3. Fetch news + Claude sentiment
+    articles  = get_news(keywords, lookback_hours=TRADE_CONFIG["news_lookback_hours"])
+    sentiment = get_combined_sentiment(articles)
 
     # 4. Generate signal
     signal = generate_signal(trend, sentiment)
 
-    # 5. Execute
+    # 5. Execute on OANDA demo
     execution = submit_order(signal)
 
     # 6. Log everything
@@ -59,8 +52,9 @@ def run_cycle():
 
 def main():
     validate_keys()
-    print("\n🏅 Gold AI Trading Bot — Paper Mode")
-    print(f"   Asset:     {ASSET_CONFIG['name']} ({ASSET_CONFIG['finnhub_symbol']})")
+
+    print("\n🏅 Gold AI Trading Bot — Demo Mode")
+    print(f"   Asset:     {ASSET_CONFIG['name']} ({ASSET_CONFIG['oanda_instrument']})")
     print(f"   Timeframe: {TRADE_CONFIG['timeframe']}min")
     print(f"   Conflict:  {TRADE_CONFIG['conflict_mode']} mode")
     print(f"   Interval:  every {TRADE_CONFIG['poll_interval_seconds']}s")

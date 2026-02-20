@@ -1,6 +1,7 @@
 """
-ai_layer.py - Uses Claude to analyze high-impact news for deeper sentiment
-Only called when Finnhub flags something as high impact, to keep API costs low.
+ai_layer.py - Uses Claude to analyze news sentiment for gold trading.
+No dependency on Finnhub sentiment scores (paid tier).
+Claude reads the actual headlines and makes the call.
 """
 
 import anthropic
@@ -12,25 +13,28 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 def analyze_news_with_claude(articles: list, asset_name: str = "Gold") -> dict:
     """
-    Send high-impact news articles to Claude for deeper analysis.
-    Returns sentiment direction and confidence.
+    Send news articles to Claude for sentiment analysis.
+    Returns direction, confidence, and reasoning.
     """
     if not articles:
-        return {"sentiment": "neutral", "confidence": 0.0, "reasoning": "No articles to analyze"}
+        return {
+            "sentiment":  "neutral",
+            "confidence": 0.0,
+            "reasoning":  "No relevant articles found"
+        }
 
-    # Build the news digest
     news_text = "\n\n".join([
-        f"Headline: {a['headline']}\nSummary: {a['summary']}\nTime: {a['datetime']}"
-        for a in articles[:5]  # cap at 5 articles to keep tokens low
+        f"Headline: {a['headline']}\nSummary: {a['summary']}"
+        for a in articles[:5]  # cap at 5 to keep tokens low
     ])
 
-    prompt = f"""You are a financial analyst specializing in {asset_name} trading.
+    prompt = f"""You are a financial analyst specializing in {asset_name} (XAU/USD) trading.
 
-Analyze the following recent news articles and determine their impact on {asset_name} price direction.
+Analyze these recent news headlines and determine their short-term impact on {asset_name} price.
 
 {news_text}
 
-Respond in this exact format:
+Respond in exactly this format:
 SENTIMENT: [BULLISH or BEARISH or NEUTRAL]
 CONFIDENCE: [0.0 to 1.0]
 REASONING: [one sentence max]
@@ -45,7 +49,6 @@ Only respond with those three lines, nothing else."""
 
     raw = message.content[0].text.strip()
 
-    # Parse the structured response
     result = {"sentiment": "neutral", "confidence": 0.0, "reasoning": raw}
     for line in raw.split("\n"):
         if line.startswith("SENTIMENT:"):
@@ -61,45 +64,25 @@ Only respond with those three lines, nothing else."""
     return result
 
 
-def get_combined_sentiment(finnhub_score: float, articles: list, buzz: float) -> dict:
+def get_combined_sentiment(articles: list) -> dict:
     """
-    Combines Finnhub's built-in sentiment with Claude's deeper analysis.
-    Only calls Claude if there are high-buzz articles worth analyzing.
+    Gets sentiment purely from Claude analyzing the news articles.
+    Falls back to neutral if no articles or Claude fails.
     """
-    from config import SENTIMENT_CONFIG
+    if not articles:
+        return {
+            "direction":  "neutral",
+            "confidence": 0.0,
+            "reasoning":  "No news articles available",
+            "source":     "default",
+        }
 
-    # Start with Finnhub sentiment
-    if finnhub_score > SENTIMENT_CONFIG["bullish_threshold"]:
-        finnhub_direction = "bullish"
-    elif finnhub_score < SENTIMENT_CONFIG["bearish_threshold"]:
-        finnhub_direction = "bearish"
-    else:
-        finnhub_direction = "neutral"
-
-    # Only call Claude if buzz is high enough to justify it
-    claude_result = None
-    if articles and buzz >= SENTIMENT_CONFIG["high_impact_score"]:
-        print(f"[AI] High buzz detected ({buzz:.2f}), calling Claude for deeper analysis...")
-        claude_result = analyze_news_with_claude(articles, ASSET_CONFIG["name"])
-
-    # Combine signals
-    if claude_result:
-        # Claude overrides if confident
-        if claude_result["confidence"] >= 0.7:
-            final_direction = claude_result["sentiment"]
-            source = "claude"
-        else:
-            # Low confidence - fall back to Finnhub
-            final_direction = finnhub_direction
-            source = "finnhub_fallback"
-    else:
-        final_direction = finnhub_direction
-        source = "finnhub"
+    print(f"[AI] Analyzing {len(articles)} articles with Claude...")
+    result = analyze_news_with_claude(articles, ASSET_CONFIG["name"])
 
     return {
-        "direction":       final_direction,
-        "finnhub_score":   finnhub_score,
-        "finnhub_direction": finnhub_direction,
-        "claude_result":   claude_result,
-        "source":          source,
+        "direction":  result["sentiment"],
+        "confidence": result["confidence"],
+        "reasoning":  result["reasoning"],
+        "source":     "claude",
     }
