@@ -20,8 +20,8 @@ TRADE_CONFIG = {
     "adx_threshold": 25,         # changed from 20 — filters weak trends
     "take_profit_pct": 0.004,    # 0.4%
     "stop_loss_pct": 0.002,      # changed from 0.003 — better risk/reward ratio
-    "htf_confirmation": True,    # NEW — only trade when 1H EMA50 agrees with 15min signal
-    "conflict_mode": "risky",
+    "htf_confirmation": False,    # NEW — only trade when 1H EMA50 agrees with 15min signal
+    "conflict_mode": "conservative",
     "news_lookback_hours": 6,
     "poll_interval_seconds": 300,
     "oanda_units": 1,
@@ -29,7 +29,7 @@ TRADE_CONFIG = {
 
 # Session filter — only trade London + NY overlap (7am-5pm UTC)
 SESSION_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "start_hour_utc": 7,
     "end_hour_utc": 17,
 }

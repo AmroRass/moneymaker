@@ -147,7 +147,7 @@ def run_cycle():
             _open_position["entry_price"] = price
             _open_position["tp_price"]    = tp
             _open_position["sl_price"]    = sl
-            _open_position["trade_id"]    = execution.get("trade_id")
+            _open_position["trade_id"]    = execution.get("order_id")
             _open_position["reasoning"]   = sentiment.get("reasoning", "")
 
             alert_trade_opened(side, price, tp, sl, sentiment.get("reasoning", ""))
